@@ -34,3 +34,26 @@ str[1] = (st.st_mode & S_IRUSR) ? 'r' : '-';
 ```
 
 **Special bits.** `S_ISUID`, `S_ISGID` and `S_ISVTX` are tested the same way. When set, they replace the execute character with `s`/`S` (setuid or setgid) or `t`/`T` (sticky). The lowercase letter means the execute bit is also set, and the uppercase letter means it is not.
+
+---
+
+## Feature 3: ls-v1.2.0 (Column Display, Down Then Across)
+
+### Q1. Explain the logic for printing in a "down then across" format. Why is a single loop insufficient?
+
+First all names are read into an array, and the longest name is recorded. With the terminal width `W` and a column width of `maxlen + 2`, the number of columns is `cols = W / col_width`, and the number of rows is `rows = ceil(count / cols)`.
+
+The names are then **sorted into columns top to bottom**, but the terminal can only print **one row at a time, left to right**. So the program loops over rows, and inside each row loops over columns. The item for row `r` and column `c` is `names[r + c * rows]`. For example, with 10 names and 3 rows the first line prints `names[0]`, `names[3]`, `names[6]`, `names[9]`.
+
+A single loop `for i in 0..count` would print `names[0], names[1], names[2], ...` in order. That gives "across then down" (the layout of `ls -x`), where consecutive names sit next to each other on one line. Down-then-across needs names that are `rows` apart in the array to sit on the same line, which requires the index to jump by `rows`. That can only be done with a nested loop that computes the index from the row and column.
+
+### Q2. What is the purpose of `ioctl` here? What are the limits of a fixed 80-column fallback?
+
+`ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws)` asks the terminal driver for the current window size and fills a `struct winsize`. `ws.ws_col` is the number of columns, so the program can work out how many columns of names fit on the screen.
+
+With only a fixed width of 80:
+- On a **wider** terminal the output would waste space and use fewer columns than it could.
+- On a **narrower** terminal, lines would be longer than the window and the terminal would wrap them mid-name, which breaks the alignment.
+- The layout would not follow the user resizing the window.
+
+The fixed 80 is still useful as a **fallback** when `ioctl` fails, such as when the output is redirected to a file or a pipe, where there is no terminal to ask.

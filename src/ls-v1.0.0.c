@@ -1,5 +1,6 @@
 /*
 * Programming Assignment 02: ls
+* Version 1.2.0: default output in columns, down then across
 * Version 1.1.0: adds the long listing format (-l)
 * Usage:
 *       $ ls
@@ -18,10 +19,14 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <limits.h>
+#include <sys/ioctl.h>
 
 extern int errno;
 
 void do_ls(const char *dir, int long_flag);
+char **read_names(const char *dir, int *count, int *maxlen);
+int get_terminal_width(void);
+void display_columns(char **names, int count, int maxlen);
 void do_ls_long(const char *dir);
 void mode_to_string(mode_t mode, char *str);
 void print_long_entry(const char *path, const char *name, const struct stat *st,
@@ -71,25 +76,123 @@ void do_ls(const char *dir, int long_flag)
         return;
     }
 
-    /* original simple display */
-    struct dirent *entry;
+    /* default display: read all names, then print in columns */
+    int count = 0, maxlen = 0;
+    char **names = read_names(dir, &count, &maxlen);
+    if (names == NULL)
+        return;
+
+    display_columns(names, count, maxlen);
+
+    for (int i = 0; i < count; i++)
+        free(names[i]);
+    free(names);
+}
+
+/* Read all non-hidden entry names into a dynamically grown array.
+   Returns NULL if the directory cannot be opened. */
+char **read_names(const char *dir, int *count, int *maxlen)
+{
     DIR *dp = opendir(dir);
     if (dp == NULL)
     {
         fprintf(stderr, "Cannot open directory : %s\n", dir);
-        return;
+        return NULL;
     }
+
+    int capacity = 16;
+    int n = 0;
+    int longest = 0;
+    char **names = malloc(capacity * sizeof(char *));
+    if (names == NULL)
+    {
+        perror("malloc");
+        closedir(dp);
+        return NULL;
+    }
+
+    struct dirent *entry;
     errno = 0;
     while ((entry = readdir(dp)) != NULL)
     {
         if (entry->d_name[0] == '.')
             continue;
-        printf("%s\n", entry->d_name);
+
+        if (n == capacity)
+        {
+            capacity *= 2;
+            char **tmp = realloc(names, capacity * sizeof(char *));
+            if (tmp == NULL)
+            {
+                perror("realloc");
+                break;
+            }
+            names = tmp;
+        }
+
+        names[n] = strdup(entry->d_name);
+        if (names[n] == NULL)
+        {
+            perror("strdup");
+            break;
+        }
+
+        int len = (int)strlen(names[n]);
+        if (len > longest)
+            longest = len;
+        n++;
     }
     if (errno != 0)
         perror("readdir failed");
 
     closedir(dp);
+    *count = n;
+    *maxlen = longest;
+    return names;
+}
+
+/* Terminal width via ioctl(TIOCGWINSZ); falls back to 80 columns
+   (e.g. when output is piped to a file or another program). */
+int get_terminal_width(void)
+{
+    struct winsize ws;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0)
+        return 80;
+    return ws.ws_col;
+}
+
+/* "Down then across": fill each column top to bottom, then move right. */
+void display_columns(char **names, int count, int maxlen)
+{
+    if (count == 0)
+        return;
+
+    int term_width = get_terminal_width();
+    int col_width = maxlen + 2;                 /* name + 2 spaces gap */
+
+    int cols = term_width / col_width;
+    if (cols < 1)
+        cols = 1;
+    if (cols > count)
+        cols = count;
+
+    int rows = (count + cols - 1) / cols;       /* ceiling division */
+
+    for (int r = 0; r < rows; r++)
+    {
+        for (int c = 0; c < cols; c++)
+        {
+            int idx = r + c * rows;
+            if (idx >= count)
+                break;
+            /* pad every item except the last one on the line */
+            if (c == cols - 1 || idx + rows >= count)
+                printf("%s", names[idx]);
+            else
+                printf("%-*s", col_width, names[idx]);
+        }
+        putchar('\n');
+    }
 }
 
 /* Number of decimal digits in n (used for column alignment). */
