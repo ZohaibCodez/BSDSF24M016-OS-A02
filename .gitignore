@@ -1,0 +1,21 @@
+# Compiled binaries (attach to GitHub Releases instead)
+bin/*
+!bin/.gitkeep
+
+# Object files
+obj/*
+!obj/.gitkeep
+*.o
+*.out
+
+# Editor / OS files
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Core dumps
+core
+core.*
