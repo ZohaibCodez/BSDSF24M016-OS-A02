@@ -147,3 +147,23 @@ if (mode & (S_IXUSR | S_IXGRP | S_IXOTH))
 ```
 
 The test comes after the type checks. Directories also have the `x` bit set (it means "may enter"), so checking for the directory type first keeps directories blue instead of green.
+
+---
+
+## Feature 7: ls-v1.6.0 (Recursive Listing, -R)
+
+### Q1. What is a "base case" in a recursive function? What is the base case in your recursive `ls`?
+
+The base case is the condition under which a recursive function stops calling itself and returns normally. Without one, the recursion never ends and the program crashes with a stack overflow.
+
+In my `do_ls`, there is no single `if (done) return` line. The recursion stops naturally because the recursive call sits inside a loop over the directory's entries, and it only happens for entries that are directories. A directory with **no subdirectories** (a leaf, such as `a/b` in my tests) runs the loop without making a call, and `do_ls` returns to its caller. The directory tree is finite, so every path of calls ends at such a leaf. Two details keep the base case reliable:
+- The `.` and `..` entries are skipped (`strcmp` check). Recursing into them would repeat the same directory forever.
+- `lstat()` is used, so a **symbolic link** to a directory is not treated as a directory (`S_ISDIR` is false for a link). Following links could create a cycle, such as a link pointing back to a parent, and the recursion would never reach a leaf.
+
+If `opendir` fails (for example, permission denied), `read_names` returns NULL and `do_ls` returns immediately. That is another way a branch of the recursion ends.
+
+### Q2. Why must a full path be constructed before the recursive call? What would happen with `do_ls("subdir")`?
+
+`readdir()` returns only the **entry name** (`subdir`), not its location. `opendir()` and `lstat()` resolve relative names against the **current working directory** of the process, which never changes while the program runs. If `do_ls("parent_dir")` called `do_ls("subdir")`, the program would look for `./subdir` instead of `./parent_dir/subdir`. In most cases that directory does not exist, so `opendir` fails ("Cannot open directory") and the listing silently stops. Worse, if a directory with the same name happens to exist in the current directory, the program would list the wrong one.
+
+Building the full path (`parent_dir/subdir`, using `build_path()`) gives an address that is correct from the current working directory, no matter how deep the recursion is. Each level builds on the previous path (`a`, then `a/b`, then `a/b/c`). The full path is also what `lstat` needs to find out whether an entry is a directory, and it is printed in the `dir:` header, as in the real `ls -R`.
