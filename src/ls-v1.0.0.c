@@ -1,5 +1,6 @@
 /*
 * Programming Assignment 02: ls
+* Version 1.5.0: colourised output based on file type
 * Version 1.4.0: entries sorted alphabetically with qsort()
 * Version 1.3.0: horizontal (across) display with -x
 * Version 1.2.0: default output in columns, down then across
@@ -34,11 +35,21 @@ typedef enum
 } display_mode_t;
 
 void do_ls(const char *dir, display_mode_t mode);
-void display_horizontal(char **names, int count, int maxlen);
+void display_horizontal(const char *dir, char **names, int count, int maxlen);
+void print_colored(const char *name, mode_t mode);
+void print_entry(const char *dir, const char *name, int pad_to);
 int compare_names(const void *a, const void *b);
 char **read_names(const char *dir, int *count, int *maxlen);
 int get_terminal_width(void);
-void display_columns(char **names, int count, int maxlen);
+void display_columns(const char *dir, char **names, int count, int maxlen);
+
+/* ANSI escape codes (ESC = \033) */
+#define COLOR_RESET   "\033[0m"
+#define COLOR_BLUE    "\033[1;34m"   /* directories */
+#define COLOR_GREEN   "\033[1;32m"   /* executables */
+#define COLOR_RED     "\033[1;31m"   /* archives */
+#define COLOR_PINK    "\033[1;35m"   /* symbolic links */
+#define COLOR_REVERSE "\033[7m"      /* special files */
 void do_ls_long(const char *dir);
 void mode_to_string(mode_t mode, char *str);
 void print_long_entry(const char *path, const char *name, const struct stat *st,
@@ -98,9 +109,9 @@ void do_ls(const char *dir, display_mode_t mode)
         return;
 
     if (mode == MODE_HORIZONTAL)
-        display_horizontal(names, count, maxlen);
+        display_horizontal(dir, names, count, maxlen);
     else
-        display_columns(names, count, maxlen);
+        display_columns(dir, names, count, maxlen);
 
     for (int i = 0; i < count; i++)
         free(names[i]);
@@ -193,7 +204,7 @@ int get_terminal_width(void)
 }
 
 /* "Across": print left to right, wrap when the next item would not fit. */
-void display_horizontal(char **names, int count, int maxlen)
+void display_horizontal(const char *dir, char **names, int count, int maxlen)
 {
     int term_width = get_terminal_width();
     int col_width = maxlen + 2;
@@ -207,7 +218,7 @@ void display_horizontal(char **names, int count, int maxlen)
             putchar('\n');
             pos = 0;
         }
-        printf("%-*s", col_width, names[i]);
+        print_entry(dir, names[i], col_width);
         pos += col_width;
     }
     if (count > 0)
@@ -215,7 +226,7 @@ void display_horizontal(char **names, int count, int maxlen)
 }
 
 /* "Down then across": fill each column top to bottom, then move right. */
-void display_columns(char **names, int count, int maxlen)
+void display_columns(const char *dir, char **names, int count, int maxlen)
 {
     if (count == 0)
         return;
@@ -240,12 +251,68 @@ void display_columns(char **names, int count, int maxlen)
                 break;
             /* pad every item except the last one on the line */
             if (c == cols - 1 || idx + rows >= count)
-                printf("%s", names[idx]);
+                print_entry(dir, names[idx], 0);
             else
-                printf("%-*s", col_width, names[idx]);
+                print_entry(dir, names[idx], col_width);
         }
         putchar('\n');
     }
+}
+
+/* True if name ends with one of the archive extensions. */
+static int is_archive(const char *name)
+{
+    const char *exts[] = {".tar", ".gz", ".zip"};
+    size_t len = strlen(name);
+    for (size_t i = 0; i < sizeof exts / sizeof exts[0]; i++)
+    {
+        size_t el = strlen(exts[i]);
+        if (len > el && strcmp(name + len - el, exts[i]) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+/* Print name in the colour that matches its type (mode comes from lstat).
+   Colours are only used when stdout is a terminal. */
+void print_colored(const char *name, mode_t mode)
+{
+    const char *color = NULL;
+
+    if (S_ISLNK(mode))
+        color = COLOR_PINK;
+    else if (S_ISDIR(mode))
+        color = COLOR_BLUE;
+    else if (S_ISCHR(mode) || S_ISBLK(mode) || S_ISFIFO(mode) || S_ISSOCK(mode))
+        color = COLOR_REVERSE;
+    else if (is_archive(name))
+        color = COLOR_RED;
+    else if (mode & (S_IXUSR | S_IXGRP | S_IXOTH))
+        color = COLOR_GREEN;
+
+    if (color != NULL && isatty(STDOUT_FILENO))
+        printf("%s%s%s", color, name, COLOR_RESET);
+    else
+        printf("%s", name);
+}
+
+/* lstat dir/name, print it coloured, then pad with spaces up to pad_to
+   characters. Padding uses the plain name length, because the escape codes
+   take no space on screen. */
+void print_entry(const char *dir, const char *name, int pad_to)
+{
+    char path[PATH_MAX];
+    struct stat st;
+
+    snprintf(path, sizeof path, "%s/%s", dir, name);
+    if (lstat(path, &st) == -1)
+        st.st_mode = 0;             /* unknown type: print plain */
+
+    print_colored(name, st.st_mode);
+
+    int pad = pad_to - (int)strlen(name);
+    if (pad > 0)
+        printf("%*s", pad, "");
 }
 
 /* Number of decimal digits in n (used for column alignment). */
@@ -319,13 +386,14 @@ void print_long_entry(const char *path, const char *name, const struct stat *st,
         timebuf[12] = '\0';
     }
 
-    printf("%s %*lu %-*s %-*s %*ld %s %s",
+    printf("%s %*lu %-*s %-*s %*ld %s ",
            perms,
            w_link, (unsigned long)st->st_nlink,
            w_user, user,
            w_group, group,
            w_size, (long)st->st_size,
-           timebuf, name);
+           timebuf);
+    print_colored(name, st->st_mode);
 
     /* for symbolic links show "name -> target" */
     if (S_ISLNK(st->st_mode))

@@ -111,3 +111,39 @@ return strcmp(s1, s2);
 ```
 
 Note: `strcmp` compares byte values (ASCII order), so uppercase letters sort before lowercase ones. The real `ls` uses locale-aware collation, so its order can differ for mixed case.
+
+---
+
+## Feature 6: ls-v1.5.0 (Colorized Output)
+
+### Q1. How do ANSI escape codes produce color? Show the sequence for green text.
+
+ANSI escape codes are ordinary bytes printed to the terminal that the terminal emulator interprets as commands instead of showing as text. A sequence starts with the ESC character (ASCII 27, written `\033` in C), then `[`, then one or more numbers separated by `;`, then `m` (the "set graphics" command). For example `34` selects blue text, `32` green, `31` red, `35` magenta, `7` reverse video, `1` bold and `0` resets everything. The attribute stays in effect for all following output until it is reset, so every colored name must be followed by the reset code.
+
+Green text:
+
+```c
+printf("\033[1;32m%s\033[0m", "hello");   /* ESC[1;32m  text  ESC[0m */
+```
+
+`\033[1;32m` turns on bold and green, `hello` is printed in green, and `\033[0m` returns to the default style.
+
+The escape bytes take no space on screen but are still counted by `printf("%-*s")`. For that reason my code prints the colored name first and then pads with spaces based on the length of the plain name. It also only emits colors when `isatty(STDOUT_FILENO)` is true, so redirected output stays clean.
+
+### Q2. Which `st_mode` bits determine whether a file is executable?
+
+There are three execute bits, one for each class of user:
+
+| Bit | Meaning |
+|-----|---------|
+| `S_IXUSR` (0100) | executable by the **owner** |
+| `S_IXGRP` (0010) | executable by members of the file's **group** |
+| `S_IXOTH` (0001) | executable by **others** |
+
+A file is treated as executable if any of them is set:
+
+```c
+if (mode & (S_IXUSR | S_IXGRP | S_IXOTH))
+```
+
+The test comes after the type checks. Directories also have the `x` bit set (it means "may enter"), so checking for the directory type first keeps directories blue instead of green.
