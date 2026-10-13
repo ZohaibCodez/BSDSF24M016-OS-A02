@@ -1,5 +1,6 @@
 /*
 * Programming Assignment 02: ls
+* Version 1.4.0: entries sorted alphabetically with qsort()
 * Version 1.3.0: horizontal (across) display with -x
 * Version 1.2.0: default output in columns, down then across
 * Version 1.1.0: adds the long listing format (-l)
@@ -34,6 +35,7 @@ typedef enum
 
 void do_ls(const char *dir, display_mode_t mode);
 void display_horizontal(char **names, int count, int maxlen);
+int compare_names(const void *a, const void *b);
 char **read_names(const char *dir, int *count, int *maxlen);
 int get_terminal_width(void);
 void display_columns(char **names, int count, int maxlen);
@@ -162,9 +164,22 @@ char **read_names(const char *dir, int *count, int *maxlen)
         perror("readdir failed");
 
     closedir(dp);
+
+    /* sort once here, so every display mode receives an ordered list */
+    qsort(names, n, sizeof(char *), compare_names);
+
     *count = n;
     *maxlen = longest;
     return names;
+}
+
+/* qsort passes pointers to the array elements; each element is a char *,
+   so the arguments are really char ** hidden behind const void *. */
+int compare_names(const void *a, const void *b)
+{
+    const char *s1 = *(const char *const *)a;
+    const char *s2 = *(const char *const *)b;
+    return strcmp(s1, s2);
 }
 
 /* Terminal width via ioctl(TIOCGWINSZ); falls back to 80 columns
@@ -329,26 +344,20 @@ void print_long_entry(const char *path, const char *name, const struct stat *st,
 /* Long listing: two passes so every column can be aligned. */
 void do_ls_long(const char *dir)
 {
-    DIR *dp = opendir(dir);
-    if (dp == NULL)
-    {
-        fprintf(stderr, "Cannot open directory : %s\n", dir);
+    int count = 0, maxlen = 0;
+    char **names = read_names(dir, &count, &maxlen);   /* already sorted */
+    if (names == NULL)
         return;
-    }
 
-    struct dirent *entry;
     int w_link = 1, w_user = 1, w_group = 1, w_size = 1;
     long total_blocks = 0;
     char path[PATH_MAX];
     struct stat st;
 
     /* pass 1: find the widest value in each column and the block total */
-    errno = 0;
-    while ((entry = readdir(dp)) != NULL)
+    for (int i = 0; i < count; i++)
     {
-        if (entry->d_name[0] == '.')
-            continue;
-        snprintf(path, sizeof path, "%s/%s", dir, entry->d_name);
+        snprintf(path, sizeof path, "%s/%s", dir, names[i]);
         if (lstat(path, &st) == -1)
         {
             perror(path);
@@ -375,16 +384,15 @@ void do_ls_long(const char *dir)
     printf("total %ld\n", total_blocks / 2);
 
     /* pass 2: print */
-    rewinddir(dp);
-    while ((entry = readdir(dp)) != NULL)
+    for (int i = 0; i < count; i++)
     {
-        if (entry->d_name[0] == '.')
-            continue;
-        snprintf(path, sizeof path, "%s/%s", dir, entry->d_name);
+        snprintf(path, sizeof path, "%s/%s", dir, names[i]);
         if (lstat(path, &st) == -1)
             continue;
-        print_long_entry(path, entry->d_name, &st, w_link, w_user, w_group, w_size);
+        print_long_entry(path, names[i], &st, w_link, w_user, w_group, w_size);
     }
 
-    closedir(dp);
+    for (int i = 0; i < count; i++)
+        free(names[i]);
+    free(names);
 }

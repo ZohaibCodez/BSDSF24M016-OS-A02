@@ -77,3 +77,37 @@ Inside `do_ls`:
 - Otherwise it reads all names with `read_names()` and calls `display_horizontal()` for `MODE_HORIZONTAL`, or `display_columns()` for the default.
 
 One variable and one dispatch point means a new mode only needs a new enum value and a new `if` branch.
+
+---
+
+## Feature 5: ls-v1.4.0 (Alphabetical Sort)
+
+### Q1. Why must all entries be read into memory before sorting? What are the drawbacks for directories with millions of files?
+
+`readdir()` returns entries in whatever order the file system stores them, one at a time, and there is no way to ask for "the next smallest name". A sort can only decide where an item belongs by comparing it with all the others, so the whole list has to exist in memory before the first line can be printed. The same applies to the column layout, which needs the longest name and the total count first.
+
+For a directory with millions of entries this has costs:
+- **Memory:** every name is stored (`strdup`) plus a pointer for each, so memory grows with the number of files, and `-l` would need metadata as well.
+- **Latency:** nothing appears until the whole directory is read and sorted. Sorting is `O(n log n)`.
+- **Failure risk:** `malloc`/`realloc` can fail on a very large directory.
+
+Real `ls` has the same drawback, which is why it offers the unsorted `-f` option for huge directories (it prints entries as they are read).
+
+### Q2. What is the purpose and signature of the `qsort()` comparison function? Why `const void *`?
+
+`qsort(base, n, size, cmp)` is a generic sort that works on any array type. It knows only the element size, not the type, so it cannot compare elements itself. The caller supplies `cmp`, which tells `qsort` how to order two elements:
+
+```c
+int compare_names(const void *a, const void *b);
+```
+
+It returns a negative number if `a` sorts before `b`, zero if they are equal and a positive number if `a` sorts after `b`.
+
+The parameters are `const void *` because `qsort` must accept comparison functions for any element type, and `void *` is the only pointer type that can hold the address of any type. `const` promises the comparison will not modify the elements. Inside the function we cast back to the real type. `qsort` passes the **address of each array element**, and each element is a `char *`, so the arguments are really `char **`:
+
+```c
+const char *s1 = *(const char *const *)a;
+return strcmp(s1, s2);
+```
+
+Note: `strcmp` compares byte values (ASCII order), so uppercase letters sort before lowercase ones. The real `ls` uses locale-aware collation, so its order can differ for mixed case.
