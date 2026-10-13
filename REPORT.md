@@ -57,3 +57,23 @@ With only a fixed width of 80:
 - The layout would not follow the user resizing the window.
 
 The fixed 80 is still useful as a **fallback** when `ioctl` fails, such as when the output is redirected to a file or a pipe, where there is no terminal to ask.
+
+---
+
+## Feature 4: ls-v1.3.0 (Horizontal Column Display, -x)
+
+### Q1. Compare the complexity of the "down then across" and "across" printing logic. Which needs more pre-calculation, and why?
+
+**Down then across** needs the most pre-calculation. Before printing anything the program must know the number of columns (`term_width / col_width`) and then the number of rows (`ceil(count / cols)`), because the index of each item is `r + c * rows` and depends on `rows`. The nested loop has to handle a last column that is only partly filled (`idx >= count`). The list has to be fully known up front.
+
+**Across** needs almost none. It only needs the column width and the terminal width. The program walks the array once in order, prints each name padded to the column width, keeps a running horizontal position, and prints a newline when the next item would go past the edge. There is no row count and no index arithmetic, so it is a single loop. It is simpler because the order of printing is the same as the order of the array. Down-then-across has to re-map the array into a grid.
+
+### Q2. How did you manage the display modes (-l, -x, default)? How does the program decide which function to call?
+
+I defined an enum `display_mode_t` with the values `MODE_DEFAULT`, `MODE_LONG` and `MODE_HORIZONTAL`. In `main()` the `getopt()` loop (option string `"lx"`) sets one variable `mode` when it sees `-l` or `-x`. If both are given, the last one wins, like the real `ls`. The mode is passed to `do_ls(dir, mode)`.
+
+Inside `do_ls`:
+- `MODE_LONG` calls `do_ls_long()`, which does its own two-pass reading because it needs `lstat` data.
+- Otherwise it reads all names with `read_names()` and calls `display_horizontal()` for `MODE_HORIZONTAL`, or `display_columns()` for the default.
+
+One variable and one dispatch point means a new mode only needs a new enum value and a new `if` branch.
