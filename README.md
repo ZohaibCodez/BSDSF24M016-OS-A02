@@ -33,7 +33,7 @@ languages: C, Makefile
 ### Re-engineering the Linux `ls` command in C with POSIX system calls
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](#-license)
-[![Version](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)](#-roadmap)
+[![Version](https://img.shields.io/badge/version-1.6.0-brightgreen.svg)](#-roadmap)
 [![Language](https://img.shields.io/badge/C-C11-00599C.svg?logo=c)](https://en.cppreference.com/w/c)
 [![Platform](https://img.shields.io/badge/platform-GNU%2FLinux-FCC624.svg?logo=linux&logoColor=black)](https://www.kernel.org/)
 [![Build](https://img.shields.io/badge/build-make-success.svg)](Makefile)
@@ -90,7 +90,7 @@ The goal is to learn how a core Unix utility works under the hood: reading direc
 | v1.5.0 | Colorized output | ANSI escape codes, file types |
 | v1.6.0 | Recursive listing (`-R`) | recursion, path construction |
 
-> Features are added branch by branch. See the [Roadmap](#️-roadmap) for what is finished.
+> Each feature was developed on its own branch and published as a tagged GitHub Release with a compiled binary.
 
 ---
 
@@ -154,13 +154,14 @@ make clean
 ./bin/ls /etc /home       # list several directories
 ```
 
-The options below arrive with the matching release:
-
 ```bash
 ./bin/ls -l               # long listing (v1.1.0)
 ./bin/ls -x               # horizontal columns (v1.3.0)
 ./bin/ls -R src           # recursive listing (v1.6.0)
+./bin/ls -lR .            # options can be combined
 ```
+
+Output is sorted alphabetically (v1.4.0) and colored by file type when printed to a terminal (v1.5.0): directories blue, executables green, archives red, symlinks pink, special files in reverse video.
 
 ---
 
@@ -182,12 +183,12 @@ BSDSF24M016-OS-A02/
 ## 🗺️ Roadmap
 
 - [x] ✅ Project setup and initial build (v1.0.0)
-- [ ] 🚧 Long listing format `-l` (v1.1.0)
-- [ ] 📅 Column display, down then across (v1.2.0)
-- [ ] 📅 Horizontal display `-x` (v1.3.0)
-- [ ] 📅 Alphabetical sort (v1.4.0)
-- [ ] 📅 Colorized output (v1.5.0)
-- [ ] 📅 Recursive listing `-R` (v1.6.0)
+- [x] ✅ Long listing format `-l` (v1.1.0)
+- [x] ✅ Column display, down then across (v1.2.0)
+- [x] ✅ Horizontal display `-x` (v1.3.0)
+- [x] ✅ Alphabetical sort (v1.4.0)
+- [x] ✅ Colorized output (v1.5.0)
+- [x] ✅ Recursive listing `-R` (v1.6.0)
 
 ---
 
